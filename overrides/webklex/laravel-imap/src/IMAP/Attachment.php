@@ -146,6 +146,12 @@ class Attachment {
 
         if (property_exists($this->structure, 'dparameters')) {
             foreach ($this->structure->dparameters as $parameter) {
+                // RFC6266 defines use filename* parameter prior to filename. 
+                if (strtolower($parameter->attribute) == "filename*") {
+                    $this->setName($parameter->value);
+                    $this->disposition = property_exists($this->structure, 'disposition') ? $this->structure->disposition : null;
+                    break;
+                }
                 if (strtolower($parameter->attribute) == "filename") {
                     $this->setName($parameter->value);
                     $this->disposition = property_exists($this->structure, 'disposition') ? $this->structure->disposition : null;
@@ -226,7 +232,35 @@ class Attachment {
      * @param $name
      */
     public function setName($name) {
-        $this->name = mb_decode_mimeheader($name);
+        //$this->name = mb_decode_mimeheader($name);
+        
+        // // https://github.com/freescout-helpdesk/freescout/issues/3089
+        if ($name !== null) {
+            // RFC6266 and RFC8187
+            // UTF-8''%E3%80...
+            // utf-8'en'%C2%A3%20rates
+            preg_match("#([^']+)'([^']{2})?'(.+)#", $name, $m);
+            $name_charset = '';
+            if (!empty($m[1]) && !empty($m[3])) {
+                $name = $m[3];
+                $name_charset = $m[1];
+            }
+
+            // if ($decoder === 'utf-8' && extension_loaded('imap')) {
+            //     $name = \imap_utf8($name);
+            // }
+
+            //if (preg_match('/=\?([^?]+)\?(Q|B)\?(.+)\?=/i', $name, $matches)) {
+            $name = \MailHelper::decodeSubject($name);
+            //}
+
+            // check if $name is url encoded
+            if (preg_match('/%[0-9A-F]{2}/i', $name)) {
+                $name = urldecode($name);
+            }
+        }
+
+        $this->name = $name;
     }
 
     /**

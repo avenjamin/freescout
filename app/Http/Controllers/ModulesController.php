@@ -291,7 +291,7 @@ class ModulesController extends Controller
                                 case 'inactive':
                                     $response['msg'] = __('License key has not been activated yet');
                                 case 'site_inactive':
-                                    $response['msg'] = __('Your domain is deactivated');
+                                    $response['msg'] = __('No activations left for this license key').' ('.__("Use 'Deactivate License' link above to transfer license key from another domain").')';
                                     break;
                             }
                         } elseif (!empty($license_result['status']) && $license_result['status'] == 'inactive') {
@@ -625,7 +625,7 @@ class ModulesController extends Controller
                 $msg = __('License key has been revoked');
                 break;
             case 'no_activations_left':
-                $msg = __('No activations left for this license key').' ('.__('Use Deactivate License button to transfer license key from another domain').')';
+                $msg = __('No activations left for this license key').' ('.__("Use 'Deactivate License' link above to transfer license key from another domain").')';
                 break;
             case 'expired':
                 $msg = __('License key has expired');
@@ -633,8 +633,10 @@ class ModulesController extends Controller
             case 'key_mismatch':
                 $msg = __('License key belongs to another module');
                 break;
+            // This also happens when entering a valid license key for wrong module.
             case 'invalid_item_id':
-                $msg = __('Module not found in the modules directory');
+                $msg = __('Invalid license key');
+                //$msg = __('Module not found in the modules directory');
                 break;
             default:
                 if ($result && !empty($result['error'])) {

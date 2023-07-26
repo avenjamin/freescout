@@ -267,7 +267,13 @@ class FetchEmails extends Command
 
             // From - $from is the plain text email.
             $from = $message->getReplyTo();
-            if (!$from) {
+
+            if (!$from 
+                // https://github.com/freescout-helpdesk/freescout/issues/3101
+                || !($reply_to = $this->formatEmailList($from))
+                || empty($reply_to[0])
+                || preg_match('/^.+@unknown$/', $reply_to[0])
+            ) {
                 $from = $message->getFrom();
             }
             // https://github.com/freescout-helpdesk/freescout/issues/2833
@@ -280,12 +286,15 @@ class FetchEmails extends Command
                 }
             }*/
 
+            if ($from) {
+                $from = $this->formatEmailList($from);
+            }
+
             if (!$from) {
                 $this->logError('From is empty');
                 $this->setSeen($message, $mailbox);
                 return;
             } else {
-                $from = $this->formatEmailList($from);
                 $from = $from[0];
             }
 
@@ -934,7 +943,16 @@ class FetchEmails extends Command
         if ($new) {
             $thread->first = true;
         }
-        $thread->save();
+        try {
+            $thread->save();
+        } catch (\Exception $e) {
+            // Could not save thread.
+            // https://github.com/freescout-helpdesk/freescout/issues/3186
+            if ($new) {
+                $conversation->deleteForever();
+            }
+            throw $e;
+        }
 
         $saved_attachments = $this->saveAttachments($attachments, $thread->id);
         if ($saved_attachments) {
@@ -1241,7 +1259,7 @@ class FetchEmails extends Command
     }
 
     /**
-     * Conver email object to plain emails.
+     * Convert email object to plain emails.
      *
      * @param array $obj_list
      *

@@ -75,7 +75,8 @@
         "doctrine/instantiator": "1.0.5",
         "myclabs/deep-copy": "1.7.0",
         "webmozart/assert": "1.3.0",
-        "psr/container": "1.0.0"
+        "psr/container": "1.0.0",
+        "psr/http-message": "1.0.1"
     },
     "autoload": {
         "classmap": [
@@ -156,6 +157,7 @@
         "exclude-from-classmap": [
             "vendor/axn/laravel-laroute/src/Routes/Collection.php",
             "vendor/webklex/laravel-imap/src/IMAP/Message.php",
+            "vendor/webklex/laravel-imap/src/IMAP/Attachment.php",
             "vendor/webklex/laravel-imap/src/IMAP/Client.php",
             "vendor/rachidlaasri/laravel-installer/src/Helpers/RequirementsChecker.php",
             "vendor/rachidlaasri/laravel-installer/src/Helpers/PermissionsChecker.php",
@@ -273,6 +275,7 @@
             "vendor/webklex/php-imap/src/Header.php",
             "vendor/webklex/php-imap/src/Structure.php",
             "vendor/webklex/php-imap/src/Message.php",
+            "vendor/webklex/php-imap/src/Attachment.php",
             "vendor/webklex/php-imap/src/Connection/Protocols/ImapProtocol.php"
         ]
     },

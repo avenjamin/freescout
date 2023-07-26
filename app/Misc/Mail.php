@@ -215,6 +215,11 @@ class Mail
         if ($escape) {
             foreach ($vars as $i => $var) {
                 $vars[$i] = htmlspecialchars($var ?? '');
+                $vars[$i] = nl2br($vars[$i]);
+            }
+        } else {
+            foreach ($vars as $i => $var) {
+                $vars[$i] = nl2br($var ?? '');
             }
         }
 
@@ -882,25 +887,84 @@ class Mail
 
     public static function decodeSubject($subject)
     {
+        // Remove new lines as iconv_mime_decode() may loose a part separated by new line:
+        // =?utf-8?Q?Gesch=C3=A4ftskonto?= erstellen =?utf-8?Q?f=C3=BCr?=
+        //  249143
+        $subject = preg_replace("/[\r\n]/", '', $subject);
+        // https://github.com/freescout-helpdesk/freescout/issues/3185
+        $subject = str_replace('=?iso-2022-jp?', '=?iso-2022-jp-ms?', $subject);
+
+        // Sometimes imap_utf8() can't decode the subject, for example:
+        // =?iso-2022-jp?B?GyRCIXlCaBsoQjEzMhskQjlmISEhViUsITwlRyVzGyhCJhskQiUoJS8lOSVGJWolIiFXQGxMZ0U5JE4kPyRhJE4jURsoQiYbJEIjQSU1JW0lcyEhIVo3bjQpJSglLyU5JUYlaiUiISYlbyE8JS8hWxsoQg==?=
+        // and sometimes iconv_mime_decode() can't decode the subject.
+        // So we are using both.
+        // 
+        // We are trying iconv_mime_decode() first because imap_utf8()
+        // decodes umlauts into two symbols:
+        // https://github.com/freescout-helpdesk/freescout/issues/2965
+
         // Sometimes subject is split into parts and each part is base63 encoded.
         // And sometimes it's first encoded and after that split.
         // https://github.com/freescout-helpdesk/freescout/issues/3066      
+
+        // Step 1. Abnormal way - text is encoded and split into parts.
   
-        // First try to join all lines skipping =?utf-8?B? in betweeb.
-        $parts = preg_match_all("/(=\?[^\?]+\?[BQ]\?)([^\?]+)(\?=)[\r\n\t ]*/i", $subject, $m);
-        
+        // First try to join all lines and parts.
+        // Keep in mind that there can be non-encoded parts also:
+        // =?utf-8?Q?Gesch=C3=A4ftskonto?= erstellen =?utf-8?Q?f=C3=BCr?=
+        preg_match_all("/(=\?[^\?]+\?[BQ]\?)([^\?]+)(\?=)[\r\n\t ]*/i", $subject, $m);
+
         $joined_parts = '';
-        if (count($m[1]) > 1 && !empty($m[2])) {
+        if (count($m[1]) > 1 && !empty($m[2]) && !preg_match("/[\r\n\t ]+[^=]/i", $subject)) {
+            // Example: GyRCQGlNVTtZRTkhIT4uTlMbKEI=
             $joined_parts = $m[1][0].implode('', $m[2]).$m[3][0];
 
             $subject_decoded = iconv_mime_decode($joined_parts, ICONV_MIME_DECODE_CONTINUE_ON_ERROR, "UTF-8");
-            
-            if ($subject_decoded && trim($subject_decoded) != trim(rtrim($joined_parts, '='))) {
+
+            if ($subject_decoded 
+                && trim($subject_decoded) != trim($joined_parts)
+                && trim($subject_decoded) != trim(rtrim($joined_parts, '='))
+                && mb_check_encoding($subject_decoded, 'UTF-8')
+            ) {
+                return $subject_decoded;
+            }
+
+            // Try imap_utf8().
+            // =?iso-2022-jp?B?IBskQiFaSEcyPDpuQ?= =?iso-2022-jp?B?C4wTU1qIVs3Mkp2JSIlLyU3JSItahsoQg==?=
+            $subject_decoded = \imap_utf8($joined_parts);
+
+            if ($subject_decoded 
+                && trim($subject_decoded) != trim($joined_parts)
+                && trim($subject_decoded) != trim(rtrim($joined_parts, '='))
+                && mb_check_encoding($subject_decoded, 'UTF-8')
+            ) {
                 return $subject_decoded;
             }
         }
 
+        // Step 2. Standard way - each part is encoded separately.
+
+        // iconv_mime_decode() can't decode:
+        // =?iso-2022-jp?B?IBskQiFaSEcyPDpuQC4wTU1qIVs3Mkp2JSIlLyU3JSItahsoQg==?=
         $subject_decoded = iconv_mime_decode($subject, ICONV_MIME_DECODE_CONTINUE_ON_ERROR, "UTF-8");
+
+        // Sometimes iconv_mime_decode() can't decode some parts of the subject:
+        // =?iso-2022-jp?B?IBskQiFaSEcyPDpuQC4wTU1qIVs3Mkp2JSIlLyU3JSItahsoQg==?=
+        // =?iso-2022-jp?B?GyRCQGlNVTtZRTkhIT4uTlMbKEI=?=
+        if (preg_match_all("/=\?[^\?]+\?[BQ]\?/i", $subject_decoded)) {
+            $subject_decoded = \imap_utf8($subject);
+        }
+
+        // All previous functions could not decode text.
+        // mb_decode_mimeheader() properly decodes umlauts into one unice symbol.
+        // But we use mb_decode_mimeheader() as a last resort as it may garble some symbols.
+        // Example: =?ISO-8859-1?Q?Vorgang 538336029: M=F6chten Sie Ihre E-Mail-Adresse =E4ndern??=
+        if ((preg_match_all("/=\?[^\?]+\?[BQ]\?/i", $subject_decoded) && $subject == $subject_decoded)
+            || !mb_check_encoding($subject_decoded, 'UTF-8')
+        ) {
+            $subject_decoded = mb_decode_mimeheader($subject);
+        }
+
         if (!$subject_decoded) {
             $subject_decoded = $subject;
         }

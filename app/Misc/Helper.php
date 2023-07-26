@@ -1813,6 +1813,10 @@ class Helper
         $php_extensions = [];
         $required_extensions = \Config::get('installer.requirements.php');
 
+        // Optional.
+        $required_extensions[] = 'intl';
+        $required_extensions[] = 'pcntl';
+
         foreach ($required_extensions as $extension_name) {
             $alternatives = explode('/', $extension_name);
             if ($alternatives) {
@@ -1885,5 +1889,18 @@ class Helper
         if ((int)ini_get('pcre.backtrack_limit') <= 1000000) {
             ini_set('pcre.backtrack_limit', 1000000000);
         }
+    }
+
+    /**
+     * Get client IP address.
+     */
+    public static function getClientIp()
+    {
+        // Fix for CloudFlare: https://laracasts.com/discuss/channels/laravel/cloudflare-and-user-ip
+        // But if CloudFlare is not used any value can be set to "Cf-Connecting-Ip" header.
+        // if (isset($_SERVER["HTTP_CF_CONNECTING_IP"])) {
+        //     $_SERVER['REMOTE_ADDR'] = $_SERVER["HTTP_CF_CONNECTING_IP"];
+        // }
+        return request()->ip();
     }
 }
