@@ -244,6 +244,12 @@ class Attachment {
      */
     public function save(string $path, $filename = null): bool {
         $filename = $filename ?: $this->getName();
+        
+        // sanitize $name
+        // order of '..' is important
+        // https://github.com/freescout-helpdesk/freescout/issues/3592
+        // https://github.com/Webklex/php-imap/issues/461
+        $filename = str_replace(['\\', '../', '/..', '/', chr(0), ':'], '', $filename ?? '');
 
         return file_put_contents($path.$filename, $this->getContent()) !== false;
     }
@@ -286,6 +292,10 @@ class Attachment {
             if (preg_match('/%[0-9A-F]{2}/i', $name)) {
                 $name = urldecode($name);
             }
+
+            // sanitize $name
+            // order of '..' is important
+            $name = str_replace(['\\', '../', '/..', '/', chr(0), ':'], '', $name);
         }
         $this->name = $name;
     }

@@ -103,7 +103,10 @@ class SettingsController extends Controller
                         'mail_password' => [
                             'safe_password' => true,
                             'encrypt' => true,
-                        ]
+                        ],
+                        // 'use_mail_date_on_fetching' => [
+                        //     'env' => 'APP_USE_MAIL_DATE_ON_FETCHING',
+                        // ],
                     ],
                 ];
                 break;
@@ -112,6 +115,9 @@ class SettingsController extends Controller
                     'settings' => [
                         'custom_number' => [
                             'env' => 'APP_CUSTOM_NUMBER',
+                        ],
+                        'max_message_size' => [
+                            'env' => 'APP_MAX_MESSAGE_SIZE',
                         ],
                         'email_conv_history' => [
                             'env' => 'APP_EMAIL_CONV_HISTORY',
@@ -197,6 +203,7 @@ class SettingsController extends Controller
                     'email_branding'       => Option::get('email_branding'),
                     'open_tracking'        => Option::get('open_tracking'),
                     'email_conv_history'   => config('app.email_conv_history'),
+                    'max_message_size'     => config('app.max_message_size'),
                     'email_user_history'   => config('app.email_user_history'),
                     'enrich_customer_data' => Option::get('enrich_customer_data'),
                     'time_format'          => Option::get('time_format', User::TIME_FORMAT_24),
@@ -214,6 +221,7 @@ class SettingsController extends Controller
                     'mail_password'   => \Helper::decrypt(Option::get('mail_password', \Config::get('mail.password'))),
                     'mail_encryption' => Option::get('mail_encryption', \Config::get('mail.encryption')),
                     'fetch_schedule'  => config('app.fetch_schedule'),
+                    //'use_mail_date_on_fetching'             => config('app.use_mail_date_on_fetching'),
                 ];
                 break;
             case 'alerts':
@@ -386,17 +394,22 @@ class SettingsController extends Controller
                 }
 
                 if (!$response['msg']) {
-                    $test_result = false;
+                    $test_result = [
+                        'status' => 'error'
+                    ];
 
                     try {
                         $test_result = \MailHelper::sendTestMail($request->to);
                     } catch (\Exception $e) {
-                        $response['msg'] = $e->getMessage();
+                        $test_result['msg'] = $e->getMessage();
                     }
 
-                    if (!$test_result && !$response['msg']) {
-                        $response['msg'] = __('Error occurred sending email. Please check your mail server logs for more details.');
+                    if ($test_result['status'] == 'error') {
+                        $response['msg'] = $test_result['msg']
+                            ?: __('Error occurred sending email. Please check your mail server logs for more details.');
                     }
+
+                    $response['log'] = $test_result['log'] ?? '';
                 }
 
                 if (!$response['msg']) {

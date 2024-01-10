@@ -12,7 +12,7 @@
             @action('thread.after_header', $thread, $loop, $threads, $conversation, $mailbox)
         </div>
         <div class="dropdown thread-options">
-            <span class="dropdown-toggle {{--glyphicon glyphicon-option-vertical--}}" data-toggle="dropdown"><b class="caret"></b></span>
+            <span class="dropdown-toggle {{--glyphicon glyphicon-option-vertical--}}" data-toggle="dropdown" role="button" aria-expanded="false" aria-haspopup="true"><b class="caret"></b></span>
             @if (Auth::user()->isAdmin())
                 <ul class="dropdown-menu dropdown-menu-right" role="menu">
                     @action('thread.menu', $thread)
@@ -38,8 +38,8 @@
                         [{{ __('Draft') }}]
                     </div>
                     <div class="btn-group btn-group-xs draft-actions">
-                        <a class="btn btn-default edit-draft-trigger" href="javascript:void(0);">{{ __('Edit') }}</a>
-                        <a class="btn btn-default discard-draft-trigger" href="javascript:void(0)">{{ __('Discard') }}</a>
+                        <a class="btn btn-default edit-draft-trigger" href="#">{{ __('Edit') }}</a>
+                        <a class="btn btn-default discard-draft-trigger" href="#">{{ __('Discard') }}</a>
                     </div>
                 </div>
                 <div class="thread-info">
@@ -231,6 +231,10 @@
                             <div>
                                 <strong>{{ __('Message not sent to customer') }}</strong> (<a href="{{ route('conversations.ajax_html', array_merge(['action' =>
                         'send_log'], \Request::all(), ['thread_id' => $thread->id]) ) }}" data-trigger="modal" data-modal-title="{{ __("Outgoing Emails") }}" data-modal-size="lg">{{ __('View log') }}</a>)
+
+                                @if ($thread->canRetrySend())
+                                    &nbsp;<button class="btn btn-default btn-xs btn-thread-retry" data-loading-text="{{ __('Retry') }}…">{{ __('Retry') }}</button>
+                                @endif
                             </div>
 
                             @if (!empty($send_status_data['bounced_by_thread']) && !empty($send_status_data['bounced_by_conversation']))
@@ -291,7 +295,7 @@
             </div>
         </div>
         <div class="dropdown thread-options">
-            <span class="dropdown-toggle {{--glyphicon glyphicon-option-vertical--}}" data-toggle="dropdown"><b class="caret"></b></span>
+            <span class="dropdown-toggle {{--glyphicon glyphicon-option-vertical--}}" data-toggle="dropdown" role="button" aria-expanded="false" aria-haspopup="true"><b class="caret"></b></span>
             <ul class="dropdown-menu dropdown-menu-right" role="menu">
                 @if (Auth::user()->can('edit', $thread))
                     <li><a href="#" title="" class="thread-edit-trigger" role="button">{{ __("Edit") }}</a></li>
@@ -299,7 +303,6 @@
                 @if ($thread->isNote() && !$thread->first && Auth::user()->can('delete', $thread))
                     <li><a href="#" class="thread-delete-trigger" role="button" data-loading-text="{{ __("Delete") }}…">{{ __("Delete") }}</a></li>
                 @endif
-                {{--<li><a href="javascript:alert('todo: implement hiding threads');void(0);" title="" class="thread-hide-trigger">{{ __("Hide") }} (todo)</a></li>--}}
                 <li><a href="{{ route('conversations.create', ['mailbox_id' => $mailbox->id]) }}?from_thread_id={{ $thread->id }}" title="{{ __("Start a conversation from this thread") }}" class="new-conv" role="button">{{ __("New Conversation") }}</a></li>
                 @if ($thread->isCustomerMessage())
                     <li><a href="{{ route('conversations.clone_conversation', ['mailbox_id' => $mailbox->id, 'from_thread_id' => $thread->id]) }}" title="{{ __("Clone a conversation from this thread") }}" class="new-conv" role="button">{{ __("Clone Conversation") }}</a></li>

@@ -53,7 +53,7 @@ class SystemController extends Controller
         // Check if cache files are writable.
         $non_writable_cache_file = '';
         if (function_exists('shell_exec')) {
-            $non_writable_cache_file = shell_exec('find '.base_path('storage/framework/cache/data/').' -type f | xargs -I {} sh -c \'[ ! -w "{}" ] && echo {}\' 2>&1 | head -n 1');
+            $non_writable_cache_file = \Helper::shellExec('find '.base_path('storage/framework/cache/data/').' -type f | xargs -I {} sh -c \'[ ! -w "{}" ] && echo {}\' 2>&1 | head -n 1');
             $non_writable_cache_file = trim($non_writable_cache_file ?? '');
             // Leave only one line (in case head -n 1 does not work)
             $non_writable_cache_file = preg_replace("#[\r\n].+#m", '', $non_writable_cache_file);
@@ -97,7 +97,7 @@ class SystemController extends Controller
                 $running_commands = 0;
 
                 try {
-                    $processes = preg_split("/[\r\n]/", shell_exec("ps aux | grep '{$command_identifier}'"));
+                    $processes = preg_split("/[\r\n]/", \Helper::shellExec("ps aux | grep '{$command_identifier}'"));
                     $pids = [];
                     foreach ($processes as $process) {
                         $process = trim($process);
@@ -200,6 +200,11 @@ class SystemController extends Controller
             $latest_version = \Config::get('app.version');
         }
 
+        // Detect missing migrations.
+        $migrations_output = \Helper::runCommand('migrate:status');
+        preg_match_all("#\| N    \| ([^\|]+)\|#", $migrations_output, $migrations_m);
+        $missing_migrations = $migrations_m[1] ?? [];
+
         return view('system/status', [
             'commands'              => $commands,
             'queued_jobs'           => $queued_jobs,
@@ -214,6 +219,8 @@ class SystemController extends Controller
             'public_symlink_exists' => $public_symlink_exists,
             'env_is_writable'       => $env_is_writable,
             'non_writable_cache_file' => $non_writable_cache_file,
+            'missing_migrations'    => $missing_migrations,
+            'invalid_symlinks'      => \App\Module::checkSymlinks(),
         ]);
     }
 

@@ -109,7 +109,7 @@
                                 <select id="out_encryption" class="form-control input-sized" name="out_encryption" @if ($mailbox->out_method == App\Mailbox::OUT_METHOD_SMTP) required @endif autofocus data-smtp-required="true">
                                     <option value="{{ App\Mailbox::OUT_ENCRYPTION_NONE }}" @if (old('out_encryption', $mailbox->out_encryption) == App\Mailbox::OUT_ENCRYPTION_NONE)selected="selected"@endif>{{ __('None') }}</option>
                                     <option value="{{ App\Mailbox::OUT_ENCRYPTION_SSL }}" @if (old('out_encryption', $mailbox->out_encryption) == App\Mailbox::OUT_ENCRYPTION_SSL)selected="selected"@endif>SSL</option>
-                                    <option value="{{ App\Mailbox::OUT_ENCRYPTION_TLS }}" @if (old('out_encryption', $mailbox->out_encryption) == App\Mailbox::OUT_ENCRYPTION_TLS)selected="selected"@endif>TLS</option>
+                                    <option value="{{ App\Mailbox::OUT_ENCRYPTION_TLS }}" @if (old('out_encryption', $mailbox->out_encryption) == App\Mailbox::OUT_ENCRYPTION_TLS)selected="selected"@endif>TLS &nbsp;(+StartTLS)</option>
                                 </select>
 
                                 @include('partials/field_error', ['field'=>'out_encryption'])
@@ -130,6 +130,7 @@
                                     </span>
                                 </div>
                                 <div class="form-help">{!! __("Make sure to save settings before testing.") !!}</div>
+                                <pre class="alert alert-warning hidden" id="send_test_log"></pre>
                             </div>
                         </div>
                         <hr/>

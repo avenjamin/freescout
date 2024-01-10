@@ -122,6 +122,14 @@ class User extends Authenticatable
         'permissions' => 'array',
     ];
     
+    public function __construct(array $attributes = array())
+    {
+        $this->setRawAttributes(array_merge($this->attributes, array(
+            'timezone' => config('app.timezone') ?: User::DEFAULT_TIMEZONE
+        )), true);
+        parent::__construct($attributes);
+    }
+
     /**
      * For array_unique function.
      *
@@ -298,6 +306,7 @@ class User extends Authenticatable
 
         return $settings;
     }
+
     /**
      * Get IDs of mailboxes to which user has access.
      */
@@ -349,7 +358,26 @@ class User extends Authenticatable
         }
     }
 
+    /**
+     * Main function to check if user has some exta access permission
+     * for a given mailbox.
+     */
     public function hasManageMailboxPermission($mailbox_id, $perm) {
+        // Experimental feature.
+        // This option does not affect admin users.
+        if ($perm == Mailbox::ACCESS_PERM_ASSIGNED) {
+            if ($this->isAdmin()) {
+                return false;
+            } else {
+                $show_only_assigned_conversations = config('app.show_only_assigned_conversations') ?? '';
+                if (in_array($this->id, explode(',', $show_only_assigned_conversations))) {
+                    return true;
+                } else {
+                    return false;
+                }
+            }
+        }
+
         if ($this->isAdmin()) {
             return true;
         } else {
@@ -357,6 +385,8 @@ class User extends Authenticatable
             $mailbox = $this->mailboxesSettings()->where('mailbox_id', $mailbox_id)->first();
             if ($mailbox && !empty($mailbox->access) && in_array($perm, json_decode($mailbox->access))) {
                 return true;
+            } else {
+                return false;
             }
         }
     }
@@ -1097,7 +1127,7 @@ class User extends Authenticatable
 
     public function getAuthToken()
     {
-        return md5($this->id.config('app.key'));
+        return md5($this->id.''.$this->created_at.config('app.key'));
     }
 
     public static function findNonDeleted($id, $extended = false)
@@ -1176,5 +1206,25 @@ class User extends Authenticatable
     public static function getRobotsCondition()
     {
         return User::where('type', User::TYPE_ROBOT);
+    }
+
+    // Truncate fields to their max lengths to avoid PostgreSQL error:
+    // SQLSTATE[22001]: String data, right truncated: 7 ERROR: value too long for type character varying(100).
+    // https://github.com/freescout-helpdesk/freescout/issues/3489
+    public function setFirstNameAttribute($first_name)
+    {
+        $this->attributes['first_name'] = mb_substr($first_name ?? '', 0, 20);
+    }
+    public function setLastNameAttribute($last_name)
+    {
+        $this->attributes['last_name'] = mb_substr($last_name ?? '', 0, 30);
+    }
+    public function setEmailAttribute($email)
+    {
+        $this->attributes['email'] = mb_substr($email ?? '', 0, 100);
+    }
+    public function setJobTitleAttribute($job_title)
+    {
+        $this->attributes['job_title'] = mb_substr($job_title ?? '', 0, 100);
     }
 }

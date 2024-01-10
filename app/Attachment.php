@@ -74,9 +74,9 @@ class Attachment extends Model
 
         // Replace some symbols in file name.
         // Gmail can not load image if it contains spaces.
-        $file_name = preg_replace('/[ #\/]/', '-', $file_name);
+        $file_name = preg_replace('/[ #\/]/', '_', $file_name);
         // Replace soft hyphens.
-        $file_name = str_replace(html_entity_decode('&#xAD;'), '-', $file_name);
+        $file_name = str_replace(html_entity_decode('&#xAD;'), '_', $file_name);
 
         if (!$file_name) {
             if (!$orig_extension) {
@@ -95,6 +95,11 @@ class Attachment extends Model
         // Fix for webklex/php-imap.
         if ($file_name == 'undefined' && $mime_type == 'message/rfc822') {
             $file_name = 'RFC822.eml';
+        }
+
+        // https://github.com/freescout-helpdesk/freescout/issues/1412#issuecomment-1658881493
+        if ($file_name == 'undefined' && $mime_type == 'text/calendar') {
+            $file_name = 'calendar.ics';
         }
 
         if (strlen($file_name) > 255) {
@@ -243,7 +248,13 @@ class Attachment extends Model
      */
     public function url()
     {
-        return Storage::url($this->getStorageFilePath()).'?id='.$this->id.'&token='.$this->getToken();
+        $file_url = Storage::url($this->getStorageFilePath());
+
+        // Fix percents.
+        // https://github.com/freescout-helpdesk/freescout/issues/3530
+        $file_url = str_replace('%', '%25', $file_url);
+
+        return $file_url.'?id='.$this->id.'&token='.$this->getToken();
     }
 
     /**
@@ -407,9 +418,8 @@ class Attachment extends Model
     public function duplicate($thread_id = null)
     {
         $new_attachment = $this->replicate();
-        if ($thread_id) {
-            $new_attachment->thread_id = $thread_id;
-        }
+        
+        $new_attachment->thread_id = $thread_id;
 
         $new_attachment->save();
 

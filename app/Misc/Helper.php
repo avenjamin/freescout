@@ -7,7 +7,11 @@
 namespace App\Misc;
 
 use Carbon\Carbon;
+use App\Option;
+use App\User;
+use App\CustomerChannel;
 use Illuminate\Support\Facades\Storage;
+use Symfony\Component\Console\Output\BufferedOutput;
 
 class Helper
 {
@@ -36,10 +40,17 @@ class Helper
      */
     const DIR_PERMISSIONS = 0755;
 
+    public static $csp_nonce = null;
+
     /**
      * Stores list of global entities (for caching).
      */
     public static $global_entities = [];
+
+    /**
+     * Flat allowing not to include datepicker JS and CSS twice.
+     */
+    public static $datepicker_included = false;
 
     /**
      * Files with such extensions are being renamed on upload.
@@ -738,9 +749,9 @@ class Helper
         return 'Error: '.$e->getMessage().'; File: '.$e->getFile().' ('.$e->getLine().')';
     }
 
-    public static function denyAccess()
+    public static function denyAccess($msg = '')
     {
-        abort(403, 'This action is unauthorized.');
+        abort(403, $msg ?: 'This action is unauthorized.');
     }
 
     /**
@@ -763,12 +774,11 @@ class Helper
         $client = new \GuzzleHttp\Client();
 
         try {
-            $client->request('GET', $url, [
+            $client->request('GET', $url, \Helper::setGuzzleDefaultOptions([
                 'sink' => $destinationFilePath,
                 'timeout' => 300, // seconds
                 'connect_timeout' => 7,
-                'proxy' => config('app.proxy'),
-            ]);
+            ]));
         } catch (\Exception $e) {
             self::logException($e);
         }
@@ -886,14 +896,14 @@ class Helper
         if (is_string($locale) && isset(self::$locales[$locale])) {
             $data = self::$locales[$locale];
         } else {
-            return;
+            return null;
         }
 
         if ($param) {
             if (isset(self::$locales[$locale])) {
                 return self::$locales[$locale][$param];
             } else {
-                return;
+                return null;
             }
         } else {
             return $data;
@@ -1339,16 +1349,29 @@ class Helper
         foreach ((array)$protocols as $protocol) {
             switch ($protocol) {
                 case 'http':
-                case 'https':   $value = preg_replace_callback('~(?:(https?)://([^\s<]+)|(www\.[^\s<]+?\.[^\s<]+))(?<![\.,:])~i', function ($match) use ($protocol, &$links, $attr) { if ($match[1]) $protocol = $match[1]; $link = $match[2] ?: $match[3]; return '<' . array_push($links, "<a $attr href=\"$protocol://$link\">$protocol://$link</a>") . '>'; }, $value) ?: $value;
+                case 'https':
+                    //$value = preg_replace_callback('~(?:(https?)://([^\s<]+)|(www\.[^\s<]+?\.[^\s<]+))(?<![\.,:])~i', function ($match) use ($protocol, &$links, $attr) { 
+                    //$value = preg_replace_callback('%(\b(([\w-]+)://?|www[.])[^\s()<>]+(?:\([\w\d]+\)|([^[:punct:]\s]|/)))%s', function ($match) use ($protocol, &$links, $attr) { 
+                    // https://github.com/freescout-helpdesk/freescout/issues/3402
+                    $nbsp = html_entity_decode('&nbsp;');
+                    $value = preg_replace_callback('%([>\r\n\s:;\( '.$nbsp.']|^)((([\w-]+)://?|www[.])[^\s()<>]+(?:\([\w\d]+\)|([^[:punct:]\s]|/)))%s', function ($match) use ($protocol, &$links, $attr) { 
+                            if ($match[4]) {
+                                $protocol = $match[4];
+                            }
+                            $link = $match[2];
+                            $link = substr($link, strlen($match[3]));
+                            //return '<' . array_push($links, "<a $attr href=\"$protocol://$link\">$protocol://$link</a>") . '>';
+                            return $match[1].'<' . array_push($links, "<a $attr href=\"$protocol://$link\">".$match[2]."</a>") . '>';
+                    }, $value) ?: $value;
                     break;
-                case 'mail':    $value = preg_replace_callback('~([^\s<>]+?@[^\s<]+?\.[^\s<]+)(?<![\.,:])~', function ($match) use (&$links, $attr) { return '<' . array_push($links, "<a $attr href=\"mailto:{$match[1]}\">{$match[1]}</a>") . '>'; }, $value) ?: $value;
+                case 'mail':    $value = preg_replace_callback('~([^\s<>]+?@[^\s<]+?\.[^\s<]+)(?<![\.,:\)])~', function ($match) use (&$links, $attr) { return '<' . array_push($links, "<a $attr href=\"mailto:{$match[1]}\">{$match[1]}</a>") . '>'; }, $value) ?: $value;
                     break;
                 default:        $value = preg_replace_callback('~' . preg_quote($protocol, '~') . '://([^\s<]+?)(?<![\.,:])~i', function ($match) use ($protocol, &$links, $attr) { return '<' . array_push($links, "<a $attr href=\"$protocol://{$match[1]}\">$protocol://{$match[1]}</a>") . '>'; }, $value) ?: $value;
                     break;
             }
         }
 
-        // Insert all link
+        // Insert all links
         return preg_replace_callback('/<(\d+)>/', function ($match) use (&$links) { return $links[$match[1] - 1]; }, $value ?? '') ?: $value;
     }
 
@@ -1390,7 +1413,7 @@ class Helper
         $pids = [];
 
         try {
-            $processes = preg_split("/[\r\n]/", shell_exec("ps aux | grep '".$search."'"));
+            $processes = preg_split("/[\r\n]/", \Helper::shellExec("ps aux | grep '".$search."'"));
             foreach ($processes as $process) {
                 $process = trim($process);
                 preg_match("/^[\S]+\s+([\d]+)\s+/", $process, $m);
@@ -1518,6 +1541,14 @@ class Helper
         return self::isPgSql() ? 'ilike' : 'like';
     }
 
+    // PostgreSQL truncates string if it contains \u0000 symbol starting from this symbol.
+    // https://stackoverflow.com/questions/31671634/handling-unicode-sequences-in-postgresql
+    // https://github.com/freescout-helpdesk/freescout/issues/3485
+    public static function sqlSanitizeString($string)
+    {
+        return str_replace(json_decode('"\u0000"'), "", $string);
+    }
+
     public static function humanFileSize($size, $unit="")
     {
         if ((!$unit && $size >= 1<<30) || $unit == "GB") {
@@ -1602,8 +1633,8 @@ class Helper
             $ch = curl_init();
             curl_setopt($ch, CURLOPT_RETURNTRANSFER, 1);
             curl_setopt($ch, CURLOPT_URL, $url);
+            \Helper::setCurlDefaultOptions($ch);
             curl_setopt($ch, CURLOPT_TIMEOUT, 180);
-            curl_setopt($ch, CURLOPT_PROXY, config('app.proxy'));
             $contents = curl_exec($ch);
 
             if (curl_errno($ch)) {
@@ -1674,6 +1705,36 @@ class Helper
             }
         }
 
+        // Remove illegal chars.
+        $illegal_chars = [
+            // Unix.
+                '/',
+                chr(0),
+            // Windows.
+                '<',
+                '>',
+                ':',
+                '"',
+                '/',
+                '\\',
+                '|',
+                '?',
+                '*',
+            // Macos.
+                ':',
+        ];
+        // 0-31 (ASCII control characters) for Windows.
+        for ($i = 0; $i < 32; $i++) {
+            $illegal_chars[] = chr($i);
+        }
+
+        $escaped_regex = preg_quote(implode('', $illegal_chars), '/');
+
+        // https://github.com/freescout-helpdesk/freescout/issues/3377
+        $file_name = mb_convert_encoding($file_name, 'UTF-8', 'UTF-8');
+        $file_name = preg_replace('/[' . $escaped_regex . ']/', '_', $file_name);
+        $file_name = preg_replace("/[\t\r\n]/", '', $file_name);
+
         return $file_name;
     }
 
@@ -1716,7 +1777,33 @@ class Helper
 
     public static function isHttps($url = '')
     {
-        return self::getProtocol($url) == 'https';
+        if (\Helper::isInstaller()) {
+            // In the Installer we determine HTTPS from URL.
+            return self::isCurrentUrlHttps();
+        } else {
+            return self::getProtocol($url) == 'https';
+        }
+    }
+
+    public static function isInstaller()
+    {
+        $request_uri = $_SERVER['REQUEST_URI'] ?? '';
+        $request_uri = preg_replace("#\?.*#", '', $request_uri);
+
+        return strstr($request_uri, '/install/') || preg_match("#/install$#", $request_uri);
+    }
+
+    public static function isCurrentUrlHttps()
+    {
+        if (in_array(strtolower($_SERVER['X_FORWARDED_PROTO'] ?? ''), array('https', 'on', 'ssl', '1'), true)
+            || strtolower($_SERVER['HTTPS'] ?? '') == 'on' 
+            || ($_SERVER['HTTP_X_FORWARDED_PROTO'] ?? '') == 'https'
+            || ($_SERVER['HTTP_CF_VISITOR'] ?? '') == '{"scheme":"https"}'
+        ) {
+            return true;
+        } else {
+            return false;
+        }
     }
 
     public static function fixProtocol($url)
@@ -1815,7 +1902,6 @@ class Helper
 
         // Optional.
         $required_extensions[] = 'intl';
-        $required_extensions[] = 'pcntl';
 
         foreach ($required_extensions as $extension_name) {
             $alternatives = explode('/', $extension_name);
@@ -1831,6 +1917,14 @@ class Helper
             }
         }
 
+        // Required in console.
+        if (self::isConsole() || !function_exists('shell_exec')) {
+            $pcntl_enabled = extension_loaded('pcntl');
+        } else {
+            $pcntl_enabled = preg_match("/enable/m", \Helper::shellExec("php -i | grep pcntl") ?? '');
+        }
+        $php_extensions['pcntl (console PHP)'] = $pcntl_enabled;
+
         return $php_extensions;
     }
 
@@ -1838,9 +1932,11 @@ class Helper
     {
         return [
             'shell_exec (PHP)' => function_exists('shell_exec'),
-            'proc_open (PHP)' => function_exists('proc_open'),
-            'fpassthru (PHP)' => function_exists('fpassthru'),
-            'ps (shell)' => function_exists('shell_exec') ? shell_exec('ps') : false,
+            'proc_open (PHP)'  => function_exists('proc_open'),
+            'fpassthru (PHP)'  => function_exists('fpassthru'),
+            'symlink (PHP)'    => function_exists('symlink'),
+            'pcntl_signal (console PHP)'    => function_exists('shell_exec') ? (int)\Helper::shellExec('php -r "echo (int)function_exists(\'pcntl_signal\');"') : false,
+            'ps (shell)' => function_exists('shell_exec') ? \Helper::shellExec('ps') : false,
         ];
     }
 
@@ -1902,5 +1998,139 @@ class Helper
         //     $_SERVER['REMOTE_ADDR'] = $_SERVER["HTTP_CF_CONNECTING_IP"];
         // }
         return request()->ip();
+    }
+
+    public static function getTimeFormat()
+    {
+        $user = auth()->user();
+
+        if ($user) {
+            return $user->time_format;
+        } else {
+            return Option::get('time_format', User::TIME_FORMAT_24);
+        }
+    }
+
+    public static function isTimeFormat24()
+    {
+        return self::getTimeFormat() == User::TIME_FORMAT_24;
+    }
+
+    /**
+     * Runs artisan command and returns it's output.
+     */
+    public static function runCommand($command, $options = [])
+    {
+        $output_buffer = new BufferedOutput();
+        \Artisan::call($command, $options, $output_buffer);
+        
+        return $output_buffer->fetch();
+    }
+
+    public static function setCurlDefaultOptions($ch)
+    {
+        // Curl has default CURLOPT_CONNECTTIMEOUT=30 seconds.
+        curl_setopt($ch, CURLOPT_TIMEOUT, config('app.curl_timeout'));
+        curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, config('app.curl_connect_timeout'));
+        curl_setopt($ch, CURLOPT_PROXY, config('app.proxy'));        
+        curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, config('app.curl_ssl_verifypeer'));        
+    }
+
+    public static function setGuzzleDefaultOptions($params)
+    {
+        $default_params = [
+            'timeout' => config('app.curl_timeout'),
+            'connect_timeout' => config('app.curl_connect_timeout'),
+            'proxy'  => config('app.proxy'),
+            // https://docs.guzzlephp.org/en/6.5/request-options.html#verify
+            'verify' => config('app.curl_ssl_verifypeer'),
+        ];
+
+        return array_merge($default_params, $params);
+    }
+
+    public static function cspNonce()
+    {
+        if (self::$csp_nonce === null) {
+            self::$csp_nonce = \Str::random(25);
+        }
+
+        return self::$csp_nonce;
+    }
+
+    public static function cspMetaTag()
+    {
+        if (!config('app.csp_enabled')) {
+            return '';
+        }
+
+        $nonce = \Helper::cspNonce();
+
+        return "<meta http-equiv=\"Content-Security-Policy\" content=\"script-src 'self' 'nonce-".$nonce."' "
+            .config('app.csp_script_src').' '.\Eventy::filter('csp.script_src', '')."\">";
+        //<meta property=\"csp-nonce\" id=\"csp-nonce\" content=\"".$nonce."\">";
+    }
+
+    public static function cspNonceAttr()
+    {
+        if (!config('app.csp_enabled')) {
+            return '';
+        }
+
+        return ' nonce="'.\Helper::cspNonce().'"';
+    }
+
+    public static function isChatModeAvailable()
+    {
+        return count(CustomerChannel::getChannels());
+    }
+
+    public static function isChatMode()
+    {
+        return (int)\Session::get('chat_mode', 0);
+    }
+
+    public static function setChatMode($is_on)
+    {
+        if ((int)$is_on) {
+            \Session::put('chat_mode', 1);
+        } else {
+            \Session::forget('chat_mode');
+        }
+    }
+
+    public static function detectCloudFlare()
+    {
+        if (!empty($_SERVER['HTTP_CF_IPCOUNTRY'])
+            || !empty($_SERVER['HTTP_CF_CONNECTING_IP'])
+            || !empty($_SERVER['HTTP_CF_VISITOR'])
+            || !empty($_SERVER['HTTP_CF_RAY'])
+            || ($_SERVER['HTTP_CDN_LOOP'] ?? '') == 'cloudflare'
+        ) {
+            return true;
+        } else {
+            return false;
+        }
+    }
+
+    // Correct format: 2023-12-14 19:21
+    // Datepicker with enableTime option enabled
+    // may return value in different format on iOS Safari: 2023-12-14T11:25
+    public static function sanitizeDatepickerDatetime($datetime)
+    {
+        return str_replace('T', ' ', $datetime);
+    }
+
+    // To catch possible exception:
+    // shell_exec(): Unable to execute
+    public static function shellExec($command)
+    {
+        try {
+            return shell_exec($command);
+        } catch (\Exception $e) {
+            self::logException($e, '\Helper::shellExec() - ');
+        }
+
+        return '';
     }
 }

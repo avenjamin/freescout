@@ -14,6 +14,7 @@ class SendLog extends Model
      * https://documentation.mailgun.com/en/latest/api-events.html#event-types.
      */
     const STATUS_ACCEPTED = 1; // accepted (for delivery)
+    const STATUS_SEND_INTERMEDIATE_ERROR = 10;
     const STATUS_SEND_ERROR = 2;
     const STATUS_DELIVERY_SUCCESS = 4;
     const STATUS_DELIVERY_ERROR = 5; // rejected, failed
@@ -42,6 +43,7 @@ class SendLog extends Model
      * @var [type]
      */
     public static $status_errors = [
+        self::STATUS_SEND_INTERMEDIATE_ERROR,
         self::STATUS_SEND_ERROR,
         self::STATUS_DELIVERY_ERROR,
     ];
@@ -92,7 +94,7 @@ class SendLog extends Model
     /**
      * Save log record.
      */
-    public static function log($thread_id, $message_id, $email, $mail_type, $status, $customer_id = null, $user_id = null, $status_message = null)
+    public static function log($thread_id, $message_id, $email, $mail_type, $status, $customer_id = null, $user_id = null, $status_message = null, $smtp_queue_id = null)
     {
         $send_log = new self();
         $send_log->thread_id = $thread_id;
@@ -103,7 +105,15 @@ class SendLog extends Model
         $send_log->customer_id = $customer_id;
         $send_log->user_id = $user_id;
         $send_log->status_message = $status_message;
-        $send_log->save();
+        if ($smtp_queue_id) {
+            $send_log->smtp_queue_id = $smtp_queue_id;
+        }
+        try {
+            $send_log->save();
+        } catch (\Exception $e) {
+            \Helper::logException($e, 'Error occurred saving a record to `send_logs` table. ');
+            return false;
+        }
 
         return true;
     }

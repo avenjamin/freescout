@@ -2363,11 +2363,14 @@ var WrappedRange = /** @class */ (function () {
      * @param {Node} node
      * @return {Node}
      */
-    WrappedRange.prototype.insertNode = function (node) {
+    WrappedRange.prototype.insertNode = function (node, doNotInsertPara) {
         var rng = this.wrapBodyInlineWithPara().deleteContents();
         var info = dom.splitPoint(rng.getStartPoint(), dom.isInline(node));
         if (info.rightNode) {
             info.rightNode.parentNode.insertBefore(node, info.rightNode);
+            if (dom.isEmpty(info.rightNode) && ((typeof(doNotInsertPara) != "undefined" && doNotInsertPara) || dom.isPara(node))) {
+                info.rightNode.parentNode.removeChild(info.rightNode);
+            }
         }
         else {
             info.container.appendChild(node);
@@ -2381,9 +2384,28 @@ var WrappedRange = /** @class */ (function () {
         var contentsContainer = $$1('<div></div>').html(markup)[0];
         var childNodes = lists.from(contentsContainer.childNodes);
         var rng = this.wrapBodyInlineWithPara().deleteContents();
-        return childNodes.reverse().map(function (childNode) {
-            return rng.insertNode(childNode);
+
+        // If block element is being pasted remove previous <div><br></div>
+        var prev_to_remove = null;
+        if (typeof(childNodes[0]) != "undefined" && !dom.isInline(childNodes[0])) {
+            var rng_nodes = rng.nodes();
+            if (typeof(rng_nodes[0]) != "undefined") {
+                var prev = rng_nodes[0];
+                if (prev && dom.isEmpty(prev) && dom.isPara(prev)) {
+                    prev_to_remove = prev;
+                }
+            }
+        }
+
+        var result = childNodes.reverse().map(function (childNode) {
+            return rng.insertNode(childNode, !dom.isInline(childNode));
         }).reverse();
+
+        if (prev_to_remove) {
+            prev_to_remove.remove();
+        }
+
+        return result;
     };
     /**
      * returns text in range

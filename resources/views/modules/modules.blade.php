@@ -25,14 +25,27 @@
             <div class="row-container margin-top">
                 <div class="alert alert-warning">
                     {{ __('There are updates available') }}:
-                    <ul>
+                    <ul id="new_versions_list">
+                        @php
+                            $new_v_counter = 0;
+                        @endphp
                         @foreach ($installed_modules as $module)
                             @if (!empty($module['new_version']))
-                                <li><a href="#module-{{ $module['alias'] }}">{{ $module['name']}} ({{ $module['new_version'] }})</a></li>
+                                @php $new_v_counter++; @endphp
+                                <li><a href="#module-{{ $module['alias'] }}" data-module-alias="{{ $module['alias'] }}">{{ $module['name']}} ({{ $module['new_version'] }})</a></li>
                             @endif
                         @endforeach
                     </ul>
+                    @if ($new_v_counter)
+                        <a href="" class="btn btn-default btn-sm update-all-trigger margin-top" data-loading-text="{{ __('Update Now') }} ({{ $new_v_counter }})…">{{ __('Update Now') }} ({{ $new_v_counter }})</a>
+                    @endif
                 </div>
+            </div>
+        @endif
+
+        @if ($invalid_symlinks)
+            <div class="row-container margin-top">
+                @include('modules/partials/invalid_symlinks')
             </div>
         @endif
 
@@ -68,10 +81,10 @@
         </div>
 
         <div class="row-container margin-top">
-            <a href="javascript:$('#third-party-container').toggleClass('hidden');void(0);" class="btn btn-default">{{ __('Show') }} »</a>
+            <a href="#third-party-container" data-toggle="collapse" class="btn btn-default">{{ __('Show') }} »</a>
         </div>
 
-        <div class="row-container margin-top hidden" id="third-party-container">
+        <div class="row-container margin-top collapse" id="third-party-container">
             @foreach ($third_party_modules as $module)
                 @include('modules/partials/module_card')
             @endforeach

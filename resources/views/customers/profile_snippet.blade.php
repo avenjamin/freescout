@@ -6,15 +6,18 @@
     	@if ($customer->getFullName(true, true))
 			<a href="{{ route('customers.update', ['id' => $customer->id]) }}" class="customer-name">{{ $customer->getFullName(true, true) }}</a>
 		@endif
-		@if ($customer->getChannelName())
-			<div class="customer-tags"><span class="fs-tag"><span class="fs-tag-name">{{ $customer->getChannelName() }}</span></span>@action('customer.tags', $customer, $conversation ?? null)</div>
+		@php
+			$channels = $customer->getChannels();
+		@endphp
+		@if (count($channels))
+			<div class="customer-tags">@foreach ($channels as $channel)<span class="fs-tag"><span class="fs-tag-name">{{ $channel->getChannelName() }}</span></span>@endforeach{{ '' }}@action('customer.tags', $customer, $conversation ?? null)</div>
 		@endif
 		<ul class="customer-contacts customer-section">
 			@if (!empty($main_email))
 		    	@foreach ($customer->emails as $email)
 		    		@if ($email->email == $main_email)
 		    		    <li class="customer-email">
-		    		        <a href="javascript:copyToClipboard('{{ $email->email }}')" class="contact-main" data-toggle="tooltip" title="{{ __('Copy') }}">{{ $email->email }}</a>
+		    		        <a href="#" class="contact-main" data-toggle="tooltip" title="{{ __('Copy') }}">{{ $email->email }}</a>
 		           	    </li>
 		           	@endif
 		        @endforeach
@@ -22,7 +25,7 @@
 		    @foreach ($customer->emails as $email)
 		    	@if (empty($main_email) || $email->email != $main_email)
 	            	<li class="customer-email">
-	                    <a href="javascript:copyToClipboard('{{ $email->email }}')" class="contact-main" data-toggle="tooltip" title="{{ __('Copy') }}">{{ $email->email }}</a>
+	                    <a href="#" class="contact-main" data-toggle="tooltip" title="{{ __('Copy') }}">{{ $email->email }}</a>
 	                </li>
 	            @endif
 	        @endforeach

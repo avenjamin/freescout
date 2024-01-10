@@ -2,6 +2,7 @@
 
 namespace App;
 
+use App\SendLog;
 use App\Events\ConversationStatusChanged;
 use App\Events\ConversationUserChanged;
 use App\Events\UserAddedNote;
@@ -309,7 +310,7 @@ class Thread extends Model
         // Change "background:" to "background-color:".
         // https://github.com/freescout-helpdesk/freescout/issues/2560
         // Keep in mind that with large texts preg_replace() may return null.
-        $body = preg_replace("/(<[^<>]+style=[\"'][^\"']*)background: *([^;() ]+;)/", '$1background-color:$2', $body) ?: $body;
+        $body = preg_replace("/(<[^<>]+style=[\"'][^\"']*)background: *([^;() ]+[;\"'])/", '$1background-color:$2', $body) ?: $body;
 
         // Cut out "collapse" class as it hides elements.
         $body = preg_replace("/(<[^<>\r\n]+class=([\"'][^\"']* |[\"']))(collapse|hidden)([\"' ])/", '$1$4', $body) ?: $body;
@@ -1392,6 +1393,12 @@ class Thread extends Model
     {
         $message = \MailHelper::fetchMessage($this->conversation->mailbox, $this->message_id, $this->getMailDate());
 
+        // Try without limiting by date.
+        // https://github.com/freescout-helpdesk/freescout/issues/3658
+        if (!$message) {
+            $message = \MailHelper::fetchMessage($this->conversation->mailbox, $this->message_id);
+        }
+
         if (!$message) {
             return '';
         }
@@ -1487,5 +1494,54 @@ class Thread extends Model
         }
 
         return '';
+    }
+
+    // Sorts threads in desc order by created_at and ID.
+    // 
+    // Threads has to be sorted by created_at and not by id.
+    // https://github.com/freescout-helpdesk/freescout/issues/2938
+    // Sometimes thread.created_at may be the same,
+    // in such cases we also need to sort by thread ID.
+    public static function sortThreads($threads)
+    {
+        return $threads->sort(function ($a, $b) {
+            $a_ts = $a->created_at->getTimestamp();
+            $b_ts = $b->created_at->getTimestamp();
+            if ($a_ts == $b_ts) {
+                if ($a->id < $b->id) {
+                    return 1;
+                } else {
+                    return -1;
+                }
+            } else {
+                return ($a_ts < $b_ts) ? 1 : -1;
+            }
+        });
+    }
+
+    public static function getLastThread($threads)
+    {
+        $threads = self::sortThreads($threads);
+        return $threads->first();
+    }
+
+    public function canRetrySend()
+    {
+        if (!in_array($this->send_status, [SendLog::STATUS_SEND_ERROR, SendLog::STATUS_DELIVERY_ERROR])) {
+            return false;
+        }
+        // Check if failed_job still exists.
+        if (!$this->getFailedJobId()) {
+            return false;
+        }
+
+        return true;
+    }
+
+    public function getFailedJobId()
+    {
+        return \App\FailedJob::where('queue', 'emails')
+            ->where('payload', 'like', '{"displayName":"App\\\\\\\\Jobs\\\\\\\\SendReplyToCustomer"%{i:0;i:'.$this->id.';%')
+            ->value('id');
     }
 }
